@@ -1,0 +1,4 @@
+/target
+*.db
+*.db-*
+.state-memory-mcp

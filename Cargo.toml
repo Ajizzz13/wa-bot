@@ -1,0 +1,21 @@
+[package]
+name = "wa-bot"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+publish = false
+
+[[bin]]
+name = "wa-bot"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+whatsapp-rust = "0.7"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
+imageproc = { version = "0.27", default-features = false, features = ["text"] }
+ab_glyph = "0.2"
+serde_json = "1"
+regex = "1"
+ureq = { version = "3", features = ["cookies", "json"] }
+libc = "0.2"
