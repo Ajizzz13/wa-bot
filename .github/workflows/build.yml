@@ -7,20 +7,24 @@ on:
 
 jobs:
   build-x86:
-    runs-on: ubuntu-22.04
-    env:
-      CARGO_INCREMENTAL: 0
-      CARGO_NET_RETRY: 10
-      RUSTFLAGS: "-C link-arg=-fuse-ld=mold"
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-      - name: Install mold linker
-        run: sudo apt-get update && sudo apt-get install -y mold
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-      - run: cargo +nightly build --release --bin wa-bot
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y curl build-essential pkg-config libssl-dev
+      - name: Install Rust nightly
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly --profile minimal
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-gnu
+      - name: Build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo +nightly build --release --bin wa-bot
       - uses: actions/upload-artifact@v4
         with:
           name: wa-bot-linux-x86_64
