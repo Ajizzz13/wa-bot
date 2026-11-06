@@ -7,6 +7,7 @@ use tokio::sync::Semaphore;
 use whatsapp_rust::bot::MessageContext;
 use whatsapp_rust::prelude::MessageExt;
 
+pub mod brat;
 pub mod facebook;
 pub mod help;
 pub mod ping;
@@ -83,7 +84,8 @@ impl CommandRegistry {
             Box::new(uptime::Uptime),
             Box::new(sticker::Sticker),
             Box::new(tiktok::TikTok),
-            Box::new(facebook::Facebook),
+            Box::new(brat::Brat),
+             Box::new(facebook::Facebook),
             Box::new(help::Help),
         ];
 
