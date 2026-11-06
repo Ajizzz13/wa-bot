@@ -177,5 +177,3 @@ impl Command for Brat {
         })
     }
 }
-EOF
-echo "created"
