@@ -26,4 +26,3 @@ jobs:
           name: wa-bot-linux-x86_64
           path: target/release/wa-bot
           retention-days: 30
-EOF
