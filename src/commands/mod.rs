@@ -16,6 +16,7 @@ pub mod sticker;
 pub mod tiktok;
 pub mod uptime;
 pub mod youtube;
+pub mod ytmp3;
 
 pub type CommandResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -91,6 +92,7 @@ impl CommandRegistry {
             Box::new(brat::Brat),
             Box::new(youtube::Youtube),
             Box::new(instagram::Instagram),
+            Box::new(ytmp3::YtMp3),
         ];
 
         let meta = cmd_list
