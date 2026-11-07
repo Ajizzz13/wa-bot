@@ -10,6 +10,7 @@ use whatsapp_rust::prelude::MessageExt;
 pub mod brat;
 pub mod facebook;
 pub mod help;
+pub mod instagram;
 pub mod ping;
 pub mod sticker;
 pub mod tiktok;
@@ -89,6 +90,7 @@ impl CommandRegistry {
             Box::new(help::Help),
             Box::new(brat::Brat),
             Box::new(youtube::Youtube),
+            Box::new(instagram::Instagram),
         ];
 
         let meta = cmd_list
