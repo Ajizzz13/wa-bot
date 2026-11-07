@@ -91,7 +91,9 @@ impl Command for Help {
                    Tampilkan panduan ini\n\n\
                  ───[ 👑 *OWNER* ]───\n\
                  • */private* `[on/off]`\n\
-                   Kunci akses grup / privat\n\n\
+                   Kunci akses grup / privat\n\
+                 • */owner* `[add/del/list]`\n\
+                   Kelola nomor akses owner\n\n\
                  ───[ 💡 *TIPS* ]───\n\
                  • Reply media dengan command\n\
                  • Meme: */s teks atas | bawah*"

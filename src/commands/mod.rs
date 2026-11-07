@@ -19,6 +19,7 @@ pub mod uptime;
 pub mod youtube;
 pub mod private_mode;
 pub mod ytmp3;
+pub mod owner;
 
 pub type CommandResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -31,18 +32,48 @@ pub struct CommandMeta {
 
 const SETTINGS_FILE: &str = "bot_settings.json";
 
-fn load_settings() -> bool {
-    if let Ok(content) = std::fs::read_to_string(SETTINGS_FILE) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-            return val.get("private_mode").and_then(|v| v.as_bool()).unwrap_or(false);
-        }
+pub fn normalize_phone_number(raw: &str) -> Option<String> {
+    let mut digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return None;
     }
-    false
+
+    if digits.starts_with('0') {
+        digits = format!("62{}", &digits[1..]);
+    } else if digits.starts_with('8') && digits.len() >= 9 && digits.len() <= 13 {
+        digits = format!("62{}", digits);
+    }
+
+    if digits.len() < 8 || digits.len() > 16 {
+        return None;
+    }
+
+    Some(digits)
 }
 
-fn save_settings(private_mode: bool) {
+fn load_settings() -> (bool, Vec<String>) {
+    if let Ok(content) = std::fs::read_to_string(SETTINGS_FILE) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            let private_mode = val.get("private_mode").and_then(|v| v.as_bool()).unwrap_or(false);
+            let owners = val
+                .get("owners")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            return (private_mode, owners);
+        }
+    }
+    (false, Vec::new())
+}
+
+fn save_settings(private_mode: bool, owners: &[String]) {
     let val = serde_json::json!({
-        "private_mode": private_mode
+        "private_mode": private_mode,
+        "owners": owners,
     });
     if let Ok(j) = serde_json::to_string_pretty(&val) {
         let _ = std::fs::write(SETTINGS_FILE, j);
@@ -55,6 +86,7 @@ pub struct BotContext {
     pub media_permits: Arc<Semaphore>,
     pub private_mode: Arc<AtomicBool>,
     pub bot_number: Option<String>,
+    pub extra_owners: Arc<std::sync::RwLock<Vec<String>>>,
 }
 
 impl BotContext {
@@ -64,10 +96,41 @@ impl BotContext {
 
     pub fn set_private_mode(&self, enabled: bool) {
         self.private_mode.store(enabled, Ordering::Relaxed);
-        save_settings(enabled);
+        let owners = self.get_owners();
+        save_settings(enabled, &owners);
+    }
+
+    pub fn get_owners(&self) -> Vec<String> {
+        self.extra_owners.read().map(|g| g.clone()).unwrap_or_default()
+    }
+
+    pub fn add_owner(&self, num: String) -> bool {
+        if let Ok(mut g) = self.extra_owners.write() {
+            if !g.contains(&num) {
+                g.push(num);
+                let owners = g.clone();
+                let priv_mode = self.is_private_mode();
+                save_settings(priv_mode, &owners);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn remove_owner(&self, num: &str) -> bool {
+        if let Ok(mut g) = self.extra_owners.write() {
+            let initial_len = g.len();
+            g.retain(|x| x != num);
+            if g.len() != initial_len {
+                let owners = g.clone();
+                let priv_mode = self.is_private_mode();
+                save_settings(priv_mode, &owners);
+                return true;
+            }
+        }
+        false
     }
 }
-
 pub fn is_group_chat(chat: &whatsapp_rust::Jid) -> bool {
     chat.server == whatsapp_rust::Server::Group || chat.to_string().ends_with("@g.us")
 }
@@ -96,6 +159,20 @@ pub fn is_owner(ctx: &MessageContext, bot: &BotContext) -> bool {
     if let Ok(owner_env) = std::env::var("OWNER_NUMBER") {
         let clean: String = owner_env.chars().filter(|c| c.is_ascii_digit()).collect();
         if !clean.is_empty() && ctx.info.source.sender.user_base() == clean.as_str() {
+            return true;
+        }
+    }
+    // 5. LID bot terdaftar di sesi client
+    if let Some(bot_lid) = ctx.client.lid() {
+        if ctx.info.source.sender.user_base() == bot_lid.user_base() {
+            return true;
+        }
+    }
+
+    // 6. Terdaftar di daftar extra_owners
+    if let Ok(owners) = bot.extra_owners.read() {
+        let sender_base = ctx.info.source.sender.user_base();
+        if owners.iter().any(|o| o == sender_base) {
             return true;
         }
     }
@@ -163,6 +240,7 @@ impl CommandRegistry {
             Box::new(instagram::Instagram),
             Box::new(ytmp3::YtMp3),
             Box::new(private_mode::PrivateMode),
+            Box::new(owner::Owner),
         ];
 
         let meta = cmd_list
@@ -173,14 +251,16 @@ impl CommandRegistry {
             })
             .collect();
 
+        let (priv_mode, owners) = load_settings();
         Self {
             commands: cmd_list,
             bot_ctx: BotContext {
                 start_time: Instant::now(),
                 commands: meta,
                 media_permits: Arc::new(Semaphore::new(1)),
-                private_mode: Arc::new(AtomicBool::new(load_settings())),
+                private_mode: Arc::new(AtomicBool::new(priv_mode)),
                 bot_number,
+                extra_owners: Arc::new(std::sync::RwLock::new(owners)),
             },
         }
     }
