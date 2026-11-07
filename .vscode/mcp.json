@@ -1,0 +1,13 @@
+{
+  "servers": {
+    "state-memory-mcp": {
+      "command": "state-memory-mcp",
+      "args": [
+        "run"
+      ],
+      "env": {
+        "STATE_MEMORY_MCP_PROJECT": "bot2"
+      }
+    }
+  }
+}
