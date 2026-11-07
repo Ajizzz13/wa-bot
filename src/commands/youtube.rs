@@ -1,5 +1,5 @@
 use std::io::Read;
-use serde_json::Value;
+use std::process::Command;
 
 use whatsapp_rust::bot::MessageContext;
 use whatsapp_rust::prelude::*;
@@ -9,35 +9,33 @@ use super::{BotContext, BoxFut, Command, CommandResult};
 
 pub struct Youtube;
 
-const COBALT_API: &str = "https://api.cobalt.tools/";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 const MAX_VIDEO_BYTES: u64 = 60 * 1024 * 1024; // 60 MB batas WhatsApp
 
-fn try_extract_cobalt(url: &str) -> Option<String> {
-    let agent: ureq::Agent = ureq::config::Config::builder()
-        .build()
-        .into();
-    let payload = serde_json::json!({
-        "url": url,
-        "videoQuality": "720",
-        "youtubeVideoCodec": "h264",
-        "downloadMode": "auto"
-    });
-    let payload_str = payload.to_string();
-    let mut resp = agent
-        .post(COBALT_API)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
-        .send(&payload_str)
-        .ok()?;
-    let json_str = resp.body_mut().with_config().limit(1024 * 1024).read_to_string().ok()?;
-    let v: Value = serde_json::from_str(&json_str).ok()?;
-    let status = v.get("status")?.as_str()?;
-    if status == "error" {
-        return None;
+fn extract_with_ytdlp(url: &str) -> Result<String, String> {
+    let output = Command::new("yt-dlp")
+        .args([
+            "--no-warnings",
+            "--no-check-certificates",
+            "--user-agent", USER_AGENT,
+            "-f", "best[height<=720][ext=mp4]/best[height<=720]/best",
+            "--get-url",
+            url,
+        ])
+        .output()
+        .map_err(|e| format!("gagal menjalankan yt-dlp: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp error: {}", stderr.trim()));
     }
-    v.get("url")?.as_str().map(|s| s.to_string())
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let url = stdout.trim().lines().next().unwrap_or("").trim().to_string();
+    if url.is_empty() || !url.starts_with("http") {
+        return Err("yt-dlp tidak mengembalikan URL valid".to_string());
+    }
+    Ok(url)
 }
 
 impl Command for Youtube {
@@ -76,10 +74,10 @@ impl Command for Youtube {
             let _media_heap = super::MediaHeapGuard;
 
             {
-                let stream_url = match try_extract_cobalt(url) {
-                    Some(u) => u,
-                    None => {
-                        ctx.reply_quoting("❌ Gagal mengekstrak video YouTube. Pastikan video publik dan tidak dibatasi.").await?;
+                let stream_url = match extract_with_ytdlp(url) {
+                    Ok(u) => u,
+                    Err(e) => {
+                        ctx.reply_quoting(format!("❌ Gagal mengekstrak video YouTube: {e}")).await?;
                         return Ok(());
                     }
                 };
@@ -140,3 +138,5 @@ impl Command for Youtube {
         })
     }
 }
+EOF
+echo "written"
