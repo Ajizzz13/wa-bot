@@ -1,5 +1,5 @@
 use std::io::Read;
-use std::process::Command;
+use std::process::Command as ProcessCommand;
 
 use whatsapp_rust::bot::MessageContext;
 use whatsapp_rust::prelude::*;
@@ -13,7 +13,7 @@ const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 const MAX_VIDEO_BYTES: u64 = 60 * 1024 * 1024; // 60 MB batas WhatsApp
 
 fn extract_with_ytdlp(url: &str) -> Result<String, String> {
-    let output = Command::new("yt-dlp")
+    let output = ProcessCommand::new("yt-dlp")
         .args([
             "--no-warnings",
             "--no-check-certificates",
