@@ -45,22 +45,26 @@ impl Command for Help {
     ) -> BoxFut<'a, CommandResult> {
         Box::pin(async move {
             let sender_raw = ctx.info.source.sender.to_string();
-            let phone = sender_raw
+            let mut display_phone = sender_raw
                 .split('@')
                 .next()
                 .unwrap_or(&sender_raw)
                 .split(':')
                 .next()
-                .unwrap_or(&sender_raw);
+                .unwrap_or(&sender_raw)
+                .to_string();
+
+            if let Ok(Some(entry)) = ctx.client.get_lid_pn_entry(&ctx.info.source.sender).await {
+                display_phone = entry.phone_number.to_string();
+            }
 
             let uptime = format_uptime(bot.start_time.elapsed().as_secs());
             let total_cmd = bot.commands.len();
-            let is_user_owner = super::is_owner(ctx, bot);
+            let is_user_owner = super::is_owner(ctx, bot).await;
             let role_label = if is_user_owner { "Owner" } else { "User" };
-
             let menu = format!(
                 "╭─[ *Z-BOT ASSISTANT* ]─╮\n\
-                 │ 👤 *User:* @{phone}\n\
+                 │ 👤 *User:* @{display_phone}\n\
                  │ 👑 *Role:* {role_label}\n\
                  │ ⏱️ *Uptime:* {uptime}\n\
                  │ ⚡ *Engine:* Rust 1.94\n\

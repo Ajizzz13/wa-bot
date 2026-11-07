@@ -5,7 +5,7 @@ use super::{is_owner, normalize_phone_number, BotContext, BoxFut, Command, Comma
 
 pub struct Owner;
 
-fn extract_target_phone(msg: &wa::Message, arg: &str) -> Option<String> {
+async fn extract_target_phone(ctx: &MessageContext, arg: &str) -> Option<String> {
     let arg_trimmed = arg.trim();
     if !arg_trimmed.is_empty() {
         if let Some(norm) = normalize_phone_number(arg_trimmed) {
@@ -13,15 +13,25 @@ fn extract_target_phone(msg: &wa::Message, arg: &str) -> Option<String> {
         }
     }
 
-    let base = msg.get_base_message();
+    let base = ctx.message.get_base_message();
     if let Some(ext) = base.extended_text_message.as_option() {
         if let Some(ctx_info) = ext.context_info.as_option() {
             if let Some(part) = &ctx_info.participant {
+                if let Ok(jid) = part.parse::<whatsapp_rust::Jid>() {
+                    if let Ok(Some(entry)) = ctx.client.get_lid_pn_entry(&jid).await {
+                        return Some(entry.phone_number.to_string());
+                    }
+                }
                 if let Some(norm) = normalize_phone_number(part) {
                     return Some(norm);
                 }
             }
             if let Some(first_mention) = ctx_info.mentioned_jid.first() {
+                if let Ok(jid) = first_mention.parse::<whatsapp_rust::Jid>() {
+                    if let Ok(Some(entry)) = ctx.client.get_lid_pn_entry(&jid).await {
+                        return Some(entry.phone_number.to_string());
+                    }
+                }
                 if let Some(norm) = normalize_phone_number(first_mention) {
                     return Some(norm);
                 }
@@ -52,7 +62,7 @@ impl Command for Owner {
         bot: &'a BotContext,
     ) -> BoxFut<'a, CommandResult> {
         Box::pin(async move {
-            if !is_owner(ctx, bot) {
+            if !is_owner(ctx, bot).await {
                 ctx.reply_quoting("❌ Perintah ini khusus untuk *Owner* bot.").await?;
                 return Ok(());
             }
@@ -64,7 +74,7 @@ impl Command for Owner {
 
             match subcmd.as_str() {
                 "add" | "tambah" => {
-                    let target = extract_target_phone(&ctx.message, rest);
+                    let target = extract_target_phone(ctx, rest).await;
                     match target {
                         Some(num) => {
                             if bot.add_owner(num.clone()) {
@@ -83,7 +93,7 @@ impl Command for Owner {
                     }
                 }
                 "delete" | "del" | "remove" | "rm" | "hapus" => {
-                    let target = extract_target_phone(&ctx.message, rest);
+                    let target = extract_target_phone(ctx, rest).await;
                     match target {
                         Some(num) => {
                             if bot.remove_owner(&num) {

@@ -135,22 +135,30 @@ pub fn is_group_chat(chat: &whatsapp_rust::Jid) -> bool {
     chat.server == whatsapp_rust::Server::Group || chat.to_string().ends_with("@g.us")
 }
 
-pub fn is_owner(ctx: &MessageContext, bot: &BotContext) -> bool {
+pub async fn is_owner(ctx: &MessageContext, bot: &BotContext) -> bool {
     // 1. Pesan dikirim dari akun bot itu sendiri (is_from_me)
     if ctx.info.source.is_from_me {
         return true;
     }
 
+    let sender = &ctx.info.source.sender;
+    let sender_user = sender.user_base();
+
     // 2. Sender sama dengan nomor pairing terdaftar di sesi client
     if let Some(bot_pn) = ctx.client.pn() {
-        if ctx.info.source.sender.user_base() == bot_pn.user_base() {
+        if sender_user == bot_pn.user_base() {
+            return true;
+        }
+    }
+    if let Some(bot_lid) = ctx.client.lid() {
+        if sender_user == bot_lid.user_base() {
             return true;
         }
     }
 
     // 3. Sender sama dengan nomor bot yang diberikan saat startup
     if let Some(num) = &bot.bot_number {
-        if ctx.info.source.sender.user_base() == num.as_str() {
+        if sender_user == num.as_str() {
             return true;
         }
     }
@@ -158,22 +166,38 @@ pub fn is_owner(ctx: &MessageContext, bot: &BotContext) -> bool {
     // 4. Optional environment variable OWNER_NUMBER
     if let Ok(owner_env) = std::env::var("OWNER_NUMBER") {
         let clean: String = owner_env.chars().filter(|c| c.is_ascii_digit()).collect();
-        if !clean.is_empty() && ctx.info.source.sender.user_base() == clean.as_str() {
-            return true;
-        }
-    }
-    // 5. LID bot terdaftar di sesi client
-    if let Some(bot_lid) = ctx.client.lid() {
-        if ctx.info.source.sender.user_base() == bot_lid.user_base() {
+        if !clean.is_empty() && sender_user == clean.as_str() {
             return true;
         }
     }
 
-    // 6. Terdaftar di daftar extra_owners
+    // 5. Cek langsung sender_user di daftar extra_owners
     if let Ok(owners) = bot.extra_owners.read() {
-        let sender_base = ctx.info.source.sender.user_base();
-        if owners.iter().any(|o| o == sender_base) {
+        if owners.iter().any(|o| o == sender_user) {
             return true;
+        }
+    }
+
+    // 6. Jika sender adalah LID (@lid) atau format lain, lookup nomor HP via get_lid_pn_entry
+    if let Ok(Some(entry)) = ctx.client.get_lid_pn_entry(sender).await {
+        let phone = &entry.phone_number;
+        let lid = &entry.lid;
+
+        if let Some(bot_pn) = ctx.client.pn() {
+            if phone.as_ref() == bot_pn.user_base() {
+                return true;
+            }
+        }
+        if let Some(num) = &bot.bot_number {
+            if phone.as_ref() == num.as_str() {
+                return true;
+            }
+        }
+
+        if let Ok(owners) = bot.extra_owners.read() {
+            if owners.iter().any(|o| o == phone.as_ref() || o == lid.as_ref()) {
+                return true;
+            }
         }
     }
 
@@ -277,7 +301,7 @@ impl CommandRegistry {
             return false;
         }
         let is_group = is_group_chat(&ctx.info.source.chat);
-        if is_group && self.bot_ctx.is_private_mode() && !is_owner(ctx, &self.bot_ctx) {
+        if is_group && self.bot_ctx.is_private_mode() && !is_owner(ctx, &self.bot_ctx).await {
             return false;
         }
 
