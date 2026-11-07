@@ -55,10 +55,13 @@ impl Command for Help {
 
             let uptime = format_uptime(bot.start_time.elapsed().as_secs());
             let total_cmd = bot.commands.len();
+            let is_user_owner = super::is_owner(ctx, bot);
+            let role_label = if is_user_owner { "Owner" } else { "User" };
 
             let menu = format!(
                 "╭─[ *Z-BOT ASSISTANT* ]─╮\n\
                  │ 👤 *User:* @{phone}\n\
+                 │ 👑 *Role:* {role_label}\n\
                  │ ⏱️ *Uptime:* {uptime}\n\
                  │ ⚡ *Engine:* Rust 1.94\n\
                  │ 📦 *Total:* {total_cmd} Fitur\n\
@@ -86,6 +89,9 @@ impl Command for Help {
                    Lihat waktu aktif server\n\
                  • */menu* / */help*\n\
                    Tampilkan panduan ini\n\n\
+                 ───[ 👑 *OWNER* ]───\n\
+                 • */private* `[on/off]`\n\
+                   Kunci akses grup / privat\n\n\
                  ───[ 💡 *TIPS* ]───\n\
                  • Reply media dengan command\n\
                  • Meme: */s teks atas | bawah*"
