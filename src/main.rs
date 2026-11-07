@@ -117,7 +117,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_str = db.to_string_lossy();
     let store = SqliteStore::new(&db_str).await?;
 
-    let registry = Arc::new(CommandRegistry::new());
+    let phone_opt = get_phone_number();
+    let registry = Arc::new(CommandRegistry::new(phone_opt.clone()));
     let reg = registry.clone();
 
     let mut builder = Bot::builder()
@@ -156,7 +157,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     );
                 }
 
-                if ctx.info.source.is_from_me {
+                // Izinkan pesan dari akun bot sendiri (is_from_me), tapi pastikan hanya memproses command berawalan '/'
+                if let Some(t) = text {
+                    if !t.starts_with('/') {
+                        return;
+                    }
+                } else {
                     return;
                 }
 
@@ -167,7 +173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
 
-    if let Some(phone) = get_phone_number() {
+    if let Some(phone) = phone_opt {
         eprintln!("Menggunakan nomor pairing: {phone}");
         builder = builder.with_pair_code(PairCodeOptions {
             phone_number: phone,
