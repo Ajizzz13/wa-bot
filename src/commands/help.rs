@@ -66,6 +66,8 @@ impl Command for Help {
                  ───[ *📥 DOWNLOADER* ]───\n\
                  • */yt* `<link>`\n\
                    Unduh video YouTube (MP4)\n\
+                 • */ytmp3* `<link>`\n\
+                   Unduh audio YouTube (MP4/MP3)\n\
                  • */tt* `<link>`\n\
                    Unduh TikTok tanpa watermark\n\
                  • */ig* `<link>`\n\

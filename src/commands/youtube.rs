@@ -1,5 +1,3 @@
-use std::process::Command as ProcessCommand;
-
 use serde_json::Value;
 use whatsapp_rust::bot::MessageContext;
 use whatsapp_rust::prelude::*;
@@ -12,7 +10,7 @@ pub struct Youtube;
 const ANDROID_UA: &str = "com.google.android.youtube/21.26.364 (Linux; U; Android 11) gzip";
 const MAX_VIDEO_BYTES: u64 = 60 * 1024 * 1024; // 60 MB batas WhatsApp
 
-fn extract_video_id(url: &str) -> Option<String> {
+pub fn extract_video_id(url: &str) -> Option<String> {
     let url = url.trim();
     if let Some(idx) = url.find("v=") {
         let rest = &url[idx + 2..];
@@ -38,7 +36,7 @@ fn extract_video_id(url: &str) -> Option<String> {
     None
 }
 
-fn download_native_innertube(video_id: &str) -> Result<(String, Vec<u8>), String> {
+pub fn download_native_innertube(video_id: &str) -> Result<(String, Vec<u8>), String> {
     let agent: ureq::Agent = ureq::config::Config::builder().build().into();
 
     let payload = serde_json::json!({
@@ -141,60 +139,6 @@ fn download_native_innertube(video_id: &str) -> Result<(String, Vec<u8>), String
     Ok((title, bytes))
 }
 
-fn download_with_ytdlp_fallback(url: &str) -> Result<(String, Vec<u8>), String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let tmp_path = format!("/tmp/yt_wa_{}_{}.mp4", std::process::id(), now);
-
-    struct TempGuard(String);
-    impl Drop for TempGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    let _guard = TempGuard(tmp_path.clone());
-
-    let output = ProcessCommand::new("yt-dlp")
-        .env("PATH", "/root/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin")
-        .args([
-            "--no-warnings",
-            "--no-check-certificates",
-            "--remote-components", "ejs:github",
-            "--js-runtimes", "node",
-            "-f", "best[ext=mp4][filesize<60M]/best[height<=720]/best",
-            "--merge-output-format", "mp4",
-            "--max-filesize", "60M",
-            "-o", &tmp_path,
-            "--no-simulate",
-            "--print", "%(title)s",
-            url,
-        ])
-        .output()
-        .map_err(|e| format!("gagal menjalankan yt-dlp fallback: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp error: {}", stderr.trim()));
-    }
-
-    let title = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .lines()
-        .next()
-        .unwrap_or("YouTube Video")
-        .trim()
-        .to_string();
-
-    let bytes = std::fs::read(&tmp_path).map_err(|e| format!("gagal membaca file fallback: {e}"))?;
-    if bytes.is_empty() {
-        return Err("file fallback kosong".to_string());
-    }
-
-    Ok((title, bytes))
-}
-
 impl Command for Youtube {
     fn name(&self) -> &'static str {
         "yt"
@@ -221,6 +165,14 @@ impl Command for Youtube {
                 return Ok(());
             }
 
+            let video_id = match extract_video_id(url) {
+                Some(id) => id,
+                None => {
+                    ctx.reply_quoting("❌ Tidak dapat mengekstrak video ID dari link YouTube.").await?;
+                    return Ok(());
+                }
+            };
+
             let _ = ctx.react("⏳").await;
             let _media_permit = bot
                 .media_permits
@@ -230,24 +182,11 @@ impl Command for Youtube {
                 .expect("media semaphore must remain open");
             let _media_heap = super::MediaHeapGuard;
 
-            let (title, video_bytes) = if let Some(video_id) = extract_video_id(url) {
-                match download_native_innertube(&video_id) {
-                    Ok(res) => res,
-                    Err(_) => match download_with_ytdlp_fallback(url) {
-                        Ok(res) => res,
-                        Err(e) => {
-                            ctx.reply_quoting(format!("❌ Gagal mengunduh video: {e}")).await?;
-                            return Ok(());
-                        }
-                    },
-                }
-            } else {
-                match download_with_ytdlp_fallback(url) {
-                    Ok(res) => res,
-                    Err(e) => {
-                        ctx.reply_quoting(format!("❌ Gagal mengunduh video: {e}")).await?;
-                        return Ok(());
-                    }
+            let (title, video_bytes) = match download_native_innertube(&video_id) {
+                Ok(res) => res,
+                Err(e) => {
+                    ctx.reply_quoting(format!("❌ Gagal mengunduh video: {e}")).await?;
+                    return Ok(());
                 }
             };
 

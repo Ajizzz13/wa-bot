@@ -1,5 +1,3 @@
-use std::process::Command as ProcessCommand;
-
 use serde_json::Value;
 use whatsapp_rust::bot::MessageContext;
 use whatsapp_rust::prelude::*;
@@ -69,65 +67,6 @@ fn try_native_info_api(pk: u64) -> Option<String> {
     best.get("url")?.as_str().map(|s| s.to_string())
 }
 
-fn download_with_ytdlp(url: &str) -> Result<(String, Vec<u8>), String> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let tmp_path = format!("/tmp/ig_wa_{}_{}.mp4", std::process::id(), now);
-
-    struct TempGuard(String);
-    impl Drop for TempGuard {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_file(&self.0);
-        }
-    }
-    let _guard = TempGuard(tmp_path.clone());
-
-    let output = ProcessCommand::new("yt-dlp")
-        .env("PATH", "/root/.nvm/versions/node/v24.16.0/bin:/usr/local/bin:/usr/bin:/bin")
-        .args([
-            "--no-warnings",
-            "--no-check-certificates",
-            "-f", "best[ext=mp4][filesize<60M]/best[ext=mp4]/best",
-            "--merge-output-format", "mp4",
-            "--max-filesize", "60M",
-            "-o", &tmp_path,
-            "--no-simulate",
-            "--print", "%(title)s",
-            url,
-        ])
-        .output()
-        .map_err(|e| format!("gagal menjalankan yt-dlp: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let trimmed = stderr.trim();
-        if trimmed.contains("There is no video in this post") {
-            return Err("postingan ini bukan video/reel (hanya foto/teks)".to_string());
-        }
-        if trimmed.contains("Instagram sent an empty media response") || trimmed.contains("login") {
-            return Err("Instagram membatasi akses tanpa login untuk postingan ini".to_string());
-        }
-        return Err(format!("yt-dlp error: {trimmed}"));
-    }
-
-    let title = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .lines()
-        .next()
-        .unwrap_or("Instagram Reel")
-        .trim()
-        .to_string();
-
-    let bytes = std::fs::read(&tmp_path).map_err(|e| format!("gagal membaca file Instagram: {e}"))?;
-    if bytes.is_empty() {
-        return Err("file unduhan kosong".to_string());
-    }
-
-    Ok((title, bytes))
-}
-
 impl Command for Instagram {
     fn name(&self) -> &'static str {
         "ig"
@@ -154,6 +93,22 @@ impl Command for Instagram {
                 return Ok(());
             }
 
+            let shortcode = match extract_shortcode(url) {
+                Some(code) => code,
+                None => {
+                    ctx.reply_quoting("❌ Format link Instagram tidak dikenali. Gunakan link post/reel.").await?;
+                    return Ok(());
+                }
+            };
+
+            let pk = match id_to_pk(shortcode) {
+                Some(pk) => pk,
+                None => {
+                    ctx.reply_quoting("❌ Gagal mengonversi shortcode Instagram.").await?;
+                    return Ok(());
+                }
+            };
+
             let _ = ctx.react("⏳").await;
             let _media_permit = bot
                 .media_permits
@@ -163,32 +118,33 @@ impl Command for Instagram {
                 .expect("media semaphore must remain open");
             let _media_heap = super::MediaHeapGuard;
 
-            let mut video_data: Option<(String, Vec<u8>)> = None;
-
-            if let Some(shortcode) = extract_shortcode(url) {
-                if let Some(pk) = id_to_pk(shortcode) {
-                    if let Some(direct_url) = try_native_info_api(pk) {
-                        let agent: ureq::Agent = ureq::config::Config::builder().build().into();
-                        if let Ok(mut resp) = agent.get(&direct_url).header("User-Agent", USER_AGENT).call() {
-                            if let Ok(b) = resp.body_mut().with_config().limit(MAX_VIDEO_BYTES).read_to_vec() {
-                                if !b.is_empty() {
-                                    video_data = Some(("Instagram Reel".to_string(), b));
-                                }
-                            }
-                        }
-                    }
+            let direct_url = match try_native_info_api(pk) {
+                Some(u) => u,
+                None => {
+                    ctx.reply_quoting("❌ Gagal mengekstrak video Instagram. Akses dibatasi oleh server Instagram (private/login required).").await?;
+                    return Ok(());
                 }
-            }
+            };
 
-            let (title, video_bytes) = match video_data {
-                Some(data) => data,
-                None => match download_with_ytdlp(url) {
-                    Ok(data) => data,
-                    Err(e) => {
-                        ctx.reply_quoting(format!("❌ Gagal mengekstrak video Instagram: {e}")).await?;
-                        return Ok(());
-                    }
-                },
+            let agent: ureq::Agent = ureq::config::Config::builder().build().into();
+            let mut stream_resp = match agent.get(&direct_url).header("User-Agent", USER_AGENT).call() {
+                Ok(r) => r,
+                Err(e) => {
+                    ctx.reply_quoting(format!("❌ Gagal mengunduh stream Instagram: {e}")).await?;
+                    return Ok(());
+                }
+            };
+
+            let video_bytes = match stream_resp.body_mut().with_config().limit(MAX_VIDEO_BYTES).read_to_vec() {
+                Ok(b) if !b.is_empty() => b,
+                Ok(_) => {
+                    ctx.reply_quoting("❌ Stream video Instagram kosong.").await?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    ctx.reply_quoting(format!("❌ Gagal membaca stream video: {e}")).await?;
+                    return Ok(());
+                }
             };
 
             let upload = ctx
@@ -205,7 +161,7 @@ impl Command for Instagram {
             video.file_length = Some(upload.file_length);
             video.media_key_timestamp = Some(upload.media_key_timestamp);
             video.mimetype = Some("video/mp4".to_string());
-            video.caption = Some(format!("🎬 *{}*", title));
+            video.caption = Some("🎬 *Instagram Reel*".to_string());
 
             let mut message = wa::Message::default();
             message.video_message = MessageField::some(video);
