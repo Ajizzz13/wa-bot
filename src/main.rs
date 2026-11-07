@@ -95,6 +95,40 @@ fn configure_memory_allocator() {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024);
     }
 }
+async fn log_inbound_message(ctx: &whatsapp_rust::bot::MessageContext, text: &str) {
+    let push_name = if ctx.info.push_name.trim().is_empty() {
+        "Anonim".to_string()
+    } else {
+        ctx.info.push_name.trim().to_string()
+    };
+
+    let sender = &ctx.info.source.sender;
+    let mut phone = sender.user_base().to_string();
+    if let Ok(Some(entry)) = ctx.client.get_lid_pn_entry(sender).await {
+        phone = entry.phone_number.to_string();
+    }
+
+    let is_group = commands::is_group_chat(&ctx.info.source.chat);
+    let mem = bot_memory_stat();
+
+    eprintln!();
+    if is_group {
+        eprintln!("┏━━━ [ 👥 GROUP INBOUND ] ━━━");
+        eprintln!("┃ 👤 Pengirim : {push_name} ({phone})");
+        eprintln!("┃ 🏷️ Grup     : {}", ctx.info.source.chat);
+        eprintln!("┃ 📊 Metrik   : Group Chat • {mem}");
+    } else {
+        eprintln!("┏━━━ [ ✉️ INBOUND ] ━━━");
+        eprintln!("┃ 👤 Pengirim : {push_name} ({phone})");
+        eprintln!("┃ 📊 Metrik   : Private Chat • {mem}");
+    }
+    eprintln!("┃ 💬 Pesan    :");
+    for line in text.lines() {
+        eprintln!("┃   {line}");
+    }
+    eprintln!("┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -145,25 +179,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let reg = reg.clone();
             async move {
                 let text = commands::extract_message_text(&ctx.message);
-                if mem_monitor {
-                    eprintln!(
-                        "from {} chat {}: {:?} [{}]",
-                        ctx.info.source.sender, ctx.info.source.chat, text, bot_memory_stat()
-                    );
-                } else {
-                    eprintln!(
-                        "from {} chat {}: {:?}",
-                        ctx.info.source.sender, ctx.info.source.chat, text
-                    );
-                }
-
-                // Izinkan pesan dari akun bot sendiri (is_from_me), tapi pastikan hanya memproses command berawalan '/'
-                if let Some(t) = text {
-                    if !t.starts_with('/') {
+                // Jika pesan dari bot sendiri (is_from_me), hanya proses jika berupa command berawalan '/'
+                if ctx.info.source.is_from_me {
+                    if let Some(t) = text {
+                        if !t.starts_with('/') {
+                            return;
+                        }
+                    } else {
                         return;
                     }
-                } else {
-                    return;
+                }
+
+                // Cetak log vertikal berstruktur jika pesan memiliki teks
+                if let Some(t) = text {
+                    log_inbound_message(&ctx, t).await;
                 }
 
                 let handled = reg.dispatch(&ctx).await;
