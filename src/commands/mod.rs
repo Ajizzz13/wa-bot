@@ -31,23 +31,20 @@ pub struct CommandMeta {
 
 const SETTINGS_FILE: &str = "bot_settings.json";
 
-#[derive(serde::Serialize, serde::Deserialize, Default)]
-struct SettingsFile {
-    private_mode: bool,
-}
-
 fn load_settings() -> bool {
     if let Ok(content) = std::fs::read_to_string(SETTINGS_FILE) {
-        if let Ok(val) = serde_json::from_str::<SettingsFile>(&content) {
-            return val.private_mode;
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            return val.get("private_mode").and_then(|v| v.as_bool()).unwrap_or(false);
         }
     }
     false
 }
 
 fn save_settings(private_mode: bool) {
-    let s = SettingsFile { private_mode };
-    if let Ok(j) = serde_json::to_string_pretty(&s) {
+    let val = serde_json::json!({
+        "private_mode": private_mode
+    });
+    if let Ok(j) = serde_json::to_string_pretty(&val) {
         let _ = std::fs::write(SETTINGS_FILE, j);
     }
 }
