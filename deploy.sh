@@ -1,3 +1,3 @@
 #!/bin/bash
-sshpass -p '4NF23hFVZip2LPf' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /tmp/gh-artifact3/wa-bot root@91.192.81.152:/root/wa-bot
+sshpass -p '4NF23hFVZip2LPf' scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null /tmp/wa-bot-build/wa-bot root@91.192.81.152:/root/wa-bot
 sshpass -p '4NF23hFVZip2LPf' ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -T root@91.192.81.152 'chmod +x /root/wa-bot && export PATH="/root/.nvm/versions/node/v24.16.0/bin:$PATH" && pm2 restart wa-bot && sleep 3 && pm2 status | grep wa-bot'
