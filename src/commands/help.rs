@@ -57,44 +57,36 @@ impl Command for Help {
             let total_cmd = bot.commands.len();
 
             let menu = format!(
-                "╭───「 ✦ *Z-BOT ASSISTANT* ✦ 」\n\
-                 │\n\
+                "╭─[ *Z-BOT ASSISTANT* ]─╮\n\
                  │ 👤 *User:* @{phone}\n\
                  │ ⏱️ *Uptime:* {uptime}\n\
-                 │ ⚡ *Engine:* Rust 1.94 (Async Native)\n\
-                 │ 📦 *Commands:* {total_cmd} Fitur Siap Pakai\n\
-                 │ 📡 *Status:* Online & Responsive\n\
-                 │\n\
-                 ╰──────────────────────┈⊷\n\n\
-                 ╭──「 📥 *MEDIA DOWNLOADER* 」\n\
-                 │ ✦ */yt* `<link>`\n\
-                 │   └ _Download video/shorts YouTube (MP4)_\n\
-                 │ ✦ */tt* `<link>`\n\
-                 │   └ _Download video TikTok tanpa watermark_\n\
-                 │ ✦ */ig* `<link>`\n\
-                 │   └ _Download reel / post Instagram (MP4)_\n\
-                 │ ✦ */fb* `<link>`\n\
-                 │   └ _Download video publik Facebook_\n\
-                 ╰──────────────────────┈⊷\n\n\
-                 ╭──「 🎨 *CREATIVE & STICKER* 」\n\
-                 │ ✦ */s* `[teks | teks]`\n\
-                 │   └ _Konversi gambar/video ke WebP stiker_\n\
-                 │ ✦ */brat* `<teks>`\n\
-                 │   └ _Generate stiker teks gaya Brat aesthetic_\n\
-                 ╰──────────────────────┈⊷\n\n\
-                 ╭──「 ⚙️ *SYSTEM & UTILITY* 」\n\
-                 │ ✦ */ping*\n\
-                 │   └ _Cek kecepatan respon & latensi bot_\n\
-                 │ ✦ */uptime*\n\
-                 │   └ _Lihat runtime aktif & pemakaian RAM_\n\
-                 │ ✦ */menu* / */help*\n\
-                 │   └ _Tampilkan dashboard panduan ini_\n\
-                 ╰──────────────────────┈⊷\n\n\
-                 ╭──「 💡 *TIPS PENGGUNAAN* 」\n\
-                 │ • Kirim/reply foto atau video dengan */s*\n\
-                 │ • Buat meme: */s teks atas | teks bawah*\n\
-                 │ • Pastikan tautan media bersifat publik\n\
-                 ╰──────────────────────┈⊷"
+                 │ ⚡ *Engine:* Rust 1.94\n\
+                 │ 📦 *Total:* {total_cmd} Fitur\n\
+                 ╰───────────────────────╯\n\n\
+                 ───[ *📥 DOWNLOADER* ]───\n\
+                 • */yt* `<link>`\n\
+                   Unduh video YouTube (MP4)\n\
+                 • */tt* `<link>`\n\
+                   Unduh TikTok tanpa watermark\n\
+                 • */ig* `<link>`\n\
+                   Unduh Instagram Reel / Post\n\
+                 • */fb* `<link>`\n\
+                   Unduh video publik Facebook\n\n\
+                 ───[ *🎨 CREATIVE* ]───\n\
+                 • */s* `[teks | teks]`\n\
+                   Konversi foto/video ke stiker\n\
+                 • */brat* `<teks>`\n\
+                   Buat stiker teks gaya Brat\n\n\
+                 ───[ *⚙️ SYSTEM* ]───\n\
+                 • */ping*\n\
+                   Cek kecepatan respon & RAM\n\
+                 • */uptime*\n\
+                   Lihat waktu aktif server\n\
+                 • */menu* / */help*\n\
+                   Tampilkan panduan ini\n\n\
+                 ───[ 💡 *TIPS* ]───\n\
+                 • Reply media dengan command\n\
+                 • Meme: */s teks atas | bawah*"
             );
 
             ctx.reply_quoting(menu).await?;
