@@ -55,13 +55,12 @@ fn try_native_info_api(pk: u64) -> Option<String> {
         .call()
         .ok()?;
 
-    let mut buf = String::new();
-    resp.body_mut()
+    let buf = resp
+        .body_mut()
         .with_config()
         .limit(2 * 1024 * 1024)
-        .read_to_string(&mut buf)
+        .read_to_string()
         .ok()?;
-
     let val: Value = serde_json::from_str(&buf).ok()?;
     let items = val.get("items")?.as_array()?;
     let first = items.first()?;
