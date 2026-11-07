@@ -138,5 +138,3 @@ impl Command for Youtube {
         })
     }
 }
-EOF
-echo "written"
