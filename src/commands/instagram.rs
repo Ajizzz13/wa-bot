@@ -139,5 +139,3 @@ impl Command for Instagram {
         })
     }
 }
-EOF
-echo "created"
