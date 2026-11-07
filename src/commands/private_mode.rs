@@ -24,7 +24,7 @@ impl Command for PrivateMode {
         bot: &'a BotContext,
     ) -> BoxFut<'a, CommandResult> {
         Box::pin(async move {
-            if !is_owner(ctx, bot) {
+            if !is_owner(ctx, bot).await {
                 ctx.reply_quoting("❌ Perintah ini khusus untuk *Owner* bot.").await?;
                 return Ok(());
             }
