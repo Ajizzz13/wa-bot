@@ -170,13 +170,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .on_connected(|client| async move {
             eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
-            if let Err(e) = client.set_passive(true).await {
-                eprintln!("[!] Warning: set_passive failed: {e:?}");
-            }
             if let Err(e) = client.presence().set_unavailable().await {
                 eprintln!("[!] Warning: set_unavailable failed: {e:?}");
             }
-            eprintln!("[+] Mode pasif/offline aktif: bot tidak memicu status online.");
+            eprintln!("[+] Presence set to unavailable (offline).");
         })
         .on_logged_out(|_info| async {
             eprintln!("[-] Sesi logout / dihentikan");
