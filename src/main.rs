@@ -7,7 +7,7 @@ use std::time::Duration;
 use commands::CommandRegistry;
 use whatsapp_rust::pair_code::PairCodeOptions;
 use whatsapp_rust::prelude::*;
-
+use whatsapp_rust::PresencePolicy;
 
 pub fn bot_memory_stat() -> String {
     let mut rss_kb: Option<u64> = None;
@@ -157,6 +157,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut builder = Bot::builder()
         .with_backend(store)
+        .with_presence_policy(PresencePolicy::Manual)
         .skip_history_sync()
         .on_pair_code(|code, timeout| async move {
             eprintln!("\n========================================");
@@ -169,8 +170,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_pair_code_error(|err, _| async move {
             eprintln!("Pair code error: {:?}", err);
         })
-        .on_connected(|_client| async {
+        .on_connected(|client| async move {
             eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
+            if let Err(e) = client.set_passive(true).await {
+                eprintln!("[!] Warning: set_passive failed: {e:?}");
+            }
+            if let Err(e) = client.presence().set_unavailable().await {
+                eprintln!("[!] Warning: set_unavailable failed: {e:?}");
+            }
+            eprintln!("[+] Mode pasif/offline aktif: bot tidak memicu status online.");
         })
         .on_logged_out(|_info| async {
             eprintln!("[-] Sesi logout / dihentikan");
