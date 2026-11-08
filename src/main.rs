@@ -168,12 +168,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_pair_code_error(|err, _| async move {
             eprintln!("Pair code error: {:?}", err);
         })
-        .on_connected(|client| async move {
+        .on_connected(|_client| async move {
             eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
-            if let Err(e) = client.presence().set_unavailable().await {
-                eprintln!("[!] Warning: set_unavailable failed: {e:?}");
-            }
-            eprintln!("[+] Presence set to unavailable (offline).");
         })
         .on_logged_out(|info| async move {
             eprintln!("[-] Sesi logout / dihentikan: reason={:?}, on_connect={}", info.reason, info.on_connect);
