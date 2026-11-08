@@ -7,7 +7,6 @@ use std::time::Duration;
 use commands::CommandRegistry;
 use whatsapp_rust::pair_code::PairCodeOptions;
 use whatsapp_rust::prelude::*;
-use whatsapp_rust::PresencePolicy;
 
 pub fn bot_memory_stat() -> String {
     let mut rss_kb: Option<u64> = None;
@@ -157,7 +156,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut builder = Bot::builder()
         .with_backend(store)
-        .with_presence_policy(PresencePolicy::Manual)
         .skip_history_sync()
         .on_pair_code(|code, timeout| async move {
             eprintln!("\n========================================");
