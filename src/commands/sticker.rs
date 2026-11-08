@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use ab_glyph::{FontRef, PxScale};
 use image::codecs::webp::WebPEncoder;
 use image::imageops::{resize, FilterType};
@@ -236,99 +234,60 @@ fn convert_to_webp(
 
 fn convert_video_to_animated_webp(
     video_bytes: &[u8],
-    top_text: Option<&str>,
-    bot_text: Option<&str>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    let tmp_path = format!("/tmp/wa_vid_sticker_{}_{}.mp4", std::process::id(), now);
+    let in_path = format!("/tmp/wa_vid_in_{}_{}.mp4", std::process::id(), now);
+    let out_path = format!("/tmp/wa_vid_out_{}_{}.webp", std::process::id(), now);
 
-    struct TempGuard(String);
-    impl Drop for TempGuard {
+    struct FileCleaner(String, String);
+    impl Drop for FileCleaner {
         fn drop(&mut self) {
             let _ = std::fs::remove_file(&self.0);
+            let _ = std::fs::remove_file(&self.1);
         }
     }
-    let _guard = TempGuard(tmp_path.clone());
-    std::fs::write(&tmp_path, video_bytes)?;
+    let _cleaner = FileCleaner(in_path.clone(), out_path.clone());
+    std::fs::write(&in_path, video_bytes)?;
 
-    let mut reader = yscv_video::Mp4VideoReader::open(Path::new(&tmp_path))
-        .map_err(|e| format!("gagal membaca format video MP4: {e}"))?;
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            &in_path,
+            "-t",
+            "4",
+            "-vf",
+            "fps=12,scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000",
+            "-vcodec",
+            "libwebp_anim",
+            "-lossless",
+            "0",
+            "-q:v",
+            "45",
+            "-loop",
+            "0",
+            "-an",
+            &out_path,
+        ])
+        .output()
+        .map_err(|e| format!("gagal menjalankan ffmpeg: {e}"))?;
 
-    let font = if top_text.is_some() || bot_text.is_some() {
-        Some(FontRef::try_from_slice(FONT_DATA)?)
-    } else {
-        None
-    };
-
-    let mut raw_frames = Vec::new();
-    let mut total_decoded = 0usize;
-
-    // Decode frame secara streaming (maksimal 75 frame / ~3 detik untuk stiker WA)
-    while let Some(frame) = reader.next_frame().map_err(|e| format!("error decode frame: {e}"))? {
-        total_decoded += 1;
-        raw_frames.push(frame);
-        if total_decoded >= 75 {
-            break;
-        }
+    if !status.status.success() {
+        let err = String::from_utf8_lossy(&status.stderr);
+        let last_err = err.lines().last().unwrap_or("unknown error");
+        return Err(format!("ffmpeg error: {last_err}").into());
     }
 
-    if raw_frames.is_empty() {
-        return Err("tidak ada frame video yang berhasil didecode".into());
+    let webp_bytes = std::fs::read(&out_path)?;
+    if webp_bytes.is_empty() {
+        return Err("hasil stiker video kosong".into());
     }
-
-    // Sampling agar stiker video memiliki motion mulus di 10–12 FPS (maksimal 20–24 frame)
-    let target_frames = 20usize;
-    let stride = if raw_frames.len() > target_frames {
-        (raw_frames.len() + target_frames - 1) / target_frames
-    } else {
-        1
-    };
-
-    let sampled_frames: Vec<_> = raw_frames.into_iter().step_by(stride).take(target_frames).collect();
-    let frame_duration_ms: u32 = 100; // 10 FPS
-
-    let mut anim_frames = Vec::new();
-    for frame in sampled_frames {
-        let rgb_img = match image::RgbImage::from_raw(frame.width as u32, frame.height as u32, frame.rgb8_data) {
-            Some(img) => img,
-            None => continue,
-        };
-        let dyn_img = image::DynamicImage::ImageRgb8(rgb_img);
-        let scaled = dyn_img.resize(512, 512, FilterType::Triangle).to_rgba8();
-
-        let mut canvas = image::RgbaImage::new(512, 512);
-        let offset_x = (512 - scaled.width()) / 2;
-        let offset_y = (512 - scaled.height()) / 2;
-        image::imageops::overlay(&mut canvas, &scaled, offset_x as i64, offset_y as i64);
-
-        if let Some(ref f) = font {
-            if let Some(top) = top_text {
-                render_text_block(&mut canvas, f, top, true);
-            }
-            if let Some(bot) = bot_text {
-                render_text_block(&mut canvas, f, bot, false);
-            }
-        }
-
-        let anim_frame = oxideav_webp::AnimFrame::new(
-            512,
-            512,
-            canvas.into_raw(),
-            frame_duration_ms,
-        );
-        anim_frames.push(anim_frame);
+    if webp_bytes.len() > 1024 * 1024 {
+        return Err("ukuran stiker video melebihi batas 1 MB WhatsApp".into());
     }
-
-    if anim_frames.is_empty() {
-        return Err("gagal memproses frame stiker animasi".into());
-    }
-
-    let webp_bytes = oxideav_webp::build_animated_webp(&anim_frames)
-        .map_err(|e| format!("gagal mengompilasi stiker animasi WebP: {e}"))?;
-
     Ok(webp_bytes)
 }
 
@@ -419,11 +378,7 @@ impl Command for Sticker {
                         return Ok(());
                     }
                     let video_bytes = ctx.client.download(vid).await?;
-                    let webp_bytes = convert_video_to_animated_webp(
-                        &video_bytes,
-                        top_opt.as_deref(),
-                        bot_opt.as_deref(),
-                    )?;
+                    let webp_bytes = convert_video_to_animated_webp(&video_bytes)?;
                     send_sticker(ctx, webp_bytes, true).await?;
                 }
             }
