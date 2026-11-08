@@ -20,6 +20,7 @@ pub mod youtube;
 pub mod private_mode;
 pub mod ytmp3;
 pub mod owner;
+pub mod rvo;
 
 pub type CommandResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 pub type BoxFut<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -87,6 +88,7 @@ pub struct BotContext {
     pub private_mode: Arc<AtomicBool>,
     pub bot_number: Option<String>,
     pub extra_owners: Arc<std::sync::RwLock<Vec<String>>>,
+    pub last_view_once: Arc<std::sync::RwLock<std::collections::HashMap<String, Arc<whatsapp_rust::prelude::wa::Message>>>>,
 }
 
 impl BotContext {
@@ -129,6 +131,18 @@ impl BotContext {
             }
         }
         false
+    }
+    pub fn store_view_once(&self, chat: String, msg: Arc<whatsapp_rust::prelude::wa::Message>) {
+        if let Ok(mut g) = self.last_view_once.write() {
+            if g.len() > 100 {
+                g.clear();
+            }
+            g.insert(chat, msg);
+        }
+    }
+
+    pub fn get_last_view_once(&self, chat: &str) -> Option<Arc<whatsapp_rust::prelude::wa::Message>> {
+        self.last_view_once.read().ok()?.get(chat).cloned()
     }
 }
 pub fn is_group_chat(chat: &whatsapp_rust::Jid) -> bool {
@@ -265,6 +279,7 @@ impl CommandRegistry {
             Box::new(ytmp3::YtMp3),
             Box::new(private_mode::PrivateMode),
             Box::new(owner::Owner),
+            Box::new(rvo::Rvo),
         ];
 
         let meta = cmd_list
@@ -285,6 +300,7 @@ impl CommandRegistry {
                 private_mode: Arc::new(AtomicBool::new(priv_mode)),
                 bot_number,
                 extra_owners: Arc::new(std::sync::RwLock::new(owners)),
+                last_view_once: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             },
         }
     }
