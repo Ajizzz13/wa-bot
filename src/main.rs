@@ -181,6 +181,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let reg = reg.clone();
             async move {
                 let text = commands::extract_message_text(&ctx.message);
+                // Simpan pesan view-once ke cache per-chat agar bisa dibuka dengan /rvo
+                if ctx.message.is_view_once() {
+                    let chat_id = ctx.info.source.chat.to_string();
+                    reg.bot_ctx.store_view_once(chat_id, Arc::clone(&ctx.message));
+                }
+
                 // Jika pesan dari bot sendiri (is_from_me), hanya proses jika berupa command berawalan '/'
                 if ctx.info.source.is_from_me {
                     if let Some(t) = text {

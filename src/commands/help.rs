@@ -85,7 +85,9 @@ impl Command for Help {
                  • */s* `[teks | teks]`\n\
                    Konversi foto/video ke stiker\n\
                  • */brat* `<teks>`\n\
-                   Buat stiker teks gaya Brat\n\n\
+                   Buat stiker teks gaya Brat\n\
+                 • */rvo*\n\
+                   Buka foto/video 1x lihat\n\n\
                  ───[ *⚙️ SYSTEM* ]───\n\
                  • */ping*\n\
                    Cek kecepatan respon & RAM\n\
