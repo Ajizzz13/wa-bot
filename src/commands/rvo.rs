@@ -1,4 +1,5 @@
 use whatsapp_rust::bot::MessageContext;
+use std::sync::Arc;
 use whatsapp_rust::prelude::*;
 use whatsapp_rust::wacore::download::MediaType;
 
