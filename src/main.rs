@@ -175,8 +175,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             eprintln!("[+] Presence set to unavailable (offline).");
         })
-        .on_logged_out(|_info| async {
-            eprintln!("[-] Sesi logout / dihentikan");
+        .on_logged_out(|info| async move {
+            eprintln!("[-] Sesi logout / dihentikan: reason={:?}, on_connect={}", info.reason, info.on_connect);
+            eprintln!("[-] Sesi WhatsApp di database sudah dicabut/di-logout.");
+            eprintln!("[-] Membutuhkan pairing ulang. Menunggu 15 detik sebelum keluar...");
+            tokio::time::sleep(Duration::from_secs(15)).await;
         })
         .on_message(move |ctx| {
             let reg = reg.clone();
