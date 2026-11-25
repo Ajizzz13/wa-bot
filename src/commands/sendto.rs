@@ -56,7 +56,7 @@ impl Command for SendTo {
             // NACK 421 (StaleGroupAddressingMode) kalau cache masih PN.
             let request = SendRequest::new(&jid, wa::Message::text(text.to_string())).with_options(
                 SendOptions::default()
-                    .with_group_metadata_freshness(Freshness::CachePreferred)
+                    .with_group_metadata_freshness(Freshness::Refresh)
                     .with_device_freshness(Freshness::Refresh),
             );
 

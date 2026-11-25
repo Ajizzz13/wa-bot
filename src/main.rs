@@ -94,6 +94,83 @@ fn configure_memory_allocator() {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024);
     }
 }
+fn fmt_attrs(node: &whatsapp_rust::wacore_binary::NodeRef<'_>) -> String {
+    let mut s = String::new();
+    for (k, v) in node.attrs_iter() {
+        s.push_str(&format!(" {}={}", k, v.as_str()));
+    }
+    s
+}
+
+/// Diagnostik: rekam atribut lengkap node masuk (<ack>, <iq><group>, <message>)
+/// yang sering disamarkan oleh StanzaSummary standar.
+fn dump_raw_node(node: &whatsapp_rust::wacore_binary::NodeRef<'_>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    const KIPAS: &str = "120363431048197201";
+    const RR: &str = "120363404191362374";
+    static MSG_DUMP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    match &*node.tag {
+        "ack" => {
+            let from = node
+                .get_attr("from")
+                .map(|v| v.as_str().into_owned())
+                .unwrap_or_default();
+            let has_err = node.get_attr("error").is_some();
+            if has_err || from.starts_with(KIPAS) || from.starts_with(RR) {
+                eprintln!("[RAW-ACK] attrs:{}", fmt_attrs(node));
+                if let Some(children) = node.children() {
+                    for c in children {
+                        eprintln!("[RAW-ACK] child <{}> attrs:{}", c.tag, fmt_attrs(c));
+                    }
+                }
+            }
+        }
+        "iq" => {
+            if let Some(children) = node.children() {
+                for c in children {
+                    if &*c.tag == "group" {
+                        let gid = c
+                            .get_attr("id")
+                            .map(|v| v.as_str().into_owned())
+                            .unwrap_or_default();
+                        if gid.starts_with(KIPAS) || gid.starts_with(RR) {
+                            eprintln!("[RAW-GROUP] attrs:{}", fmt_attrs(c));
+                            if let Some(gc) = c.children() {
+                                for sub in gc {
+                                    if &*sub.tag != "participant" {
+                                        eprintln!(
+                                            "[RAW-GROUP] child <{}> attrs:{} text={:?}",
+                                            sub.tag,
+                                            fmt_attrs(sub),
+                                            sub.content_str()
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "message" => {
+            let from = node
+                .get_attr("from")
+                .map(|v| v.as_str().into_owned())
+                .unwrap_or_default();
+            if from.starts_with(KIPAS) && MSG_DUMP_COUNT.fetch_add(1, Ordering::Relaxed) < 12 {
+                eprintln!("[RAW-MSG] attrs:{}", fmt_attrs(node));
+                if let Some(children) = node.children() {
+                    for c in children {
+                        eprintln!("[RAW-MSG] child <{}> attrs:{}", c.tag, fmt_attrs(c));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Diagnostik: dump stanza `<message>` keluar untuk grup yang bermasalah.
 /// Membantu melihat `addressing_mode`, `phash`, dan isi `<participants>`
 /// (apakah ada JID PN yang bocor ke grup LID, dsb).
@@ -102,6 +179,7 @@ fn dump_sent_group_frame(plaintext: &[u8]) {
 
     const KIPAS: &str = "120363431048197201";
     const TABUNG: &str = "120363309940031565";
+    const RR: &str = "120363404191362374";
     static DUMP_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     let Ok(node) = whatsapp_rust::wacore_binary::marshal::unmarshal_packed_ref(plaintext) else {
@@ -118,11 +196,13 @@ fn dump_sent_group_frame(plaintext: &[u8]) {
         KIPAS
     } else if to_str.starts_with(TABUNG) {
         TABUNG
+    } else if to_str.starts_with(RR) {
+        RR
     } else {
         return;
     };
     // Batasi supaya log tidak banjir.
-    if DUMP_COUNT.fetch_add(1, Ordering::Relaxed) >= 8 {
+    if DUMP_COUNT.fetch_add(1, Ordering::Relaxed) >= 20 {
         return;
     }
 
@@ -289,6 +369,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::mem::forget(client.acquire_enc_decrypt_failed_forwarding());
             // Diagnostik: tangkap stanza keluar untuk membedah framing grup.
             std::mem::forget(client.acquire_sent_frame_forwarding());
+            // Diagnostik: tangkap node masuk mentah (<ack>, <iq><group>, <message>).
+            std::mem::forget(client.acquire_raw_node_forwarding());
 
             // Diagnostik: daftar semua grup yang diikuti akun bot.
             let c = Arc::clone(&client);
@@ -316,6 +398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 EventKind::UndecryptableMessage,
                 EventKind::GroupUpdate,
                 EventKind::SentFrame,
+                EventKind::RawNode,
             ],
             |event, _client| async move {
                 match &*event {
@@ -347,6 +430,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Event::SentFrame(e) => {
                         dump_sent_group_frame(&e.plaintext);
+                    }
+                    Event::RawNode(node) => {
+                        dump_raw_node(node.get());
                     }
                     _ => {}
                 }

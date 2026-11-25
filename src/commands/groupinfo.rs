@@ -69,7 +69,8 @@ impl Command for GroupInfo {
                          • Announcement: {}\n\
                          • Membership approval: {}\n\
                          • Locked: {}\n\
-                         • Created: {:?}\n\n\
+                         • Created: {:?}\n\
+                         • Flags: count={:?} missing_id={} incognito={} suspended={} hidden={} capi={} limit_share={} evo={:?} parent={:?} default_sub={} general={}\n\n\
                          *Participants:*\n",
                         meta.id,
                         meta.subject.as_deref().unwrap_or("(tanpa nama)"),
@@ -80,6 +81,17 @@ impl Command for GroupInfo {
                         meta.membership_approval,
                         meta.is_locked,
                         meta.creation_time,
+                        meta.participant_count,
+                        meta.has_missing_participant_identification,
+                        meta.is_incognito,
+                        meta.is_suspended,
+                        meta.is_hidden_group,
+                        meta.has_capi,
+                        meta.is_limit_sharing_enabled,
+                        meta.evolution_version,
+                        meta.parent_group_jid,
+                        meta.is_default_sub_group,
+                        meta.is_general_chat,
                     );
 
                     for p in meta.participants.iter().take(30) {
