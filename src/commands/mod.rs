@@ -10,6 +10,7 @@ use whatsapp_rust::prelude::MessageExt;
 
 pub mod brat;
 pub mod facebook;
+pub mod groupinfo;
 pub mod groups;
 pub mod help;
 pub mod instagram;
@@ -19,6 +20,7 @@ pub mod tiktok;
 pub mod uptime;
 pub mod youtube;
 pub mod private_mode;
+pub mod sendto;
 pub mod ytmp3;
 pub mod owner;
 pub mod rvo;
@@ -274,6 +276,8 @@ impl CommandRegistry {
             Box::new(tiktok::TikTok),
             Box::new(facebook::Facebook),
             Box::new(groups::Groups),
+            Box::new(groupinfo::GroupInfo),
+            Box::new(sendto::SendTo),
             Box::new(help::Help),
             Box::new(brat::Brat),
             Box::new(youtube::Youtube),
