@@ -132,6 +132,8 @@ async fn log_inbound_message(ctx: &whatsapp_rust::bot::MessageContext, text: &st
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     configure_memory_allocator();
+    // Diagnostik: tampilkan warning/error internal whatsapp-rust (mis. sender key hilang).
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
     let db = session_path();
     eprintln!("session db: {}", db.display());
 
@@ -168,9 +170,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_pair_code_error(|err, _| async move {
             eprintln!("Pair code error: {:?}", err);
         })
-        .on_connected(|_client| async move {
+        .on_connected(|client| async move {
             eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
+            // Diagnostik: aktifkan event kegagalan dekripsi (butuh lease selama proses hidup).
+            std::mem::forget(client.acquire_enc_decrypt_failed_forwarding());
+
+            // Diagnostik: daftar semua grup yang diikuti akun bot.
+            let c = Arc::clone(&client);
+            tokio::spawn(async move {
+                match c.groups().list_participating().await {
+                    Ok(list) => {
+                        eprintln!("[GROUPS] total={}", list.len());
+                        for g in &list {
+                            eprintln!(
+                                "[GROUPS] {} | {} | members={:?} | hierarchy={:?}",
+                                g.id,
+                                g.subject.as_deref().unwrap_or("(tanpa nama)"),
+                                g.participant_count,
+                                g.hierarchy
+                            );
+                        }
+                    }
+                    Err(e) => eprintln!("[GROUPS] gagal ambil daftar grup: {e}"),
+                }
+            });
         })
+        .on_event_for(
+            &[
+                EventKind::EncDecryptFailed,
+                EventKind::UndecryptableMessage,
+                EventKind::GroupUpdate,
+            ],
+            |event, _client| async move {
+                match &*event {
+                    Event::EncDecryptFailed(e) => {
+                        eprintln!(
+                            "[DECRYPT-FAIL] chat={} sender={} id={} enc={:?} reason={:?}",
+                            e.info.source.chat,
+                            e.info.source.sender,
+                            e.info.id,
+                            e.enc_type,
+                            e.reason
+                        );
+                    }
+                    Event::UndecryptableMessage(e) => {
+                        eprintln!(
+                            "[UNDECRYPTABLE] chat={} sender={} id={} unavailable={} utype={:?}",
+                            e.info.source.chat,
+                            e.info.source.sender,
+                            e.info.id,
+                            e.is_unavailable,
+                            e.unavailable_type
+                        );
+                    }
+                    Event::GroupUpdate(e) => {
+                        eprintln!(
+                            "[GROUP-UPDATE] group={} actor={:?} lid_mode={} action={:?}",
+                            e.group_jid, e.participant, e.is_lid_addressing_mode, e.action
+                        );
+                    }
+                    _ => {}
+                }
+            },
+        )
         .on_logged_out(|info| async move {
             eprintln!("[-] Sesi logout / dihentikan: reason={:?}, on_connect={}", info.reason, info.on_connect);
             eprintln!("[-] Sesi WhatsApp di database sudah dicabut/di-logout.");

@@ -10,6 +10,7 @@ use whatsapp_rust::prelude::MessageExt;
 
 pub mod brat;
 pub mod facebook;
+pub mod groups;
 pub mod help;
 pub mod instagram;
 pub mod ping;
@@ -272,6 +273,7 @@ impl CommandRegistry {
             Box::new(sticker::Sticker),
             Box::new(tiktok::TikTok),
             Box::new(facebook::Facebook),
+            Box::new(groups::Groups),
             Box::new(help::Help),
             Box::new(brat::Brat),
             Box::new(youtube::Youtube),
