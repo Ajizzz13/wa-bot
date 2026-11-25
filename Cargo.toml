@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
-whatsapp-rust = { git = "https://github.com/oxidezap/whatsapp-rust", rev = "14da2200a8f4455235e72a008f48e022b29debdd" }
+whatsapp-rust = { git = "https://github.com/Ajizzz13/whatsapp-rust", rev = "ae05ba3ff001a1a1e015c6803f980a2fc8e988a4" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 imageproc = { version = "0.27", default-features = false, features = ["text"] }
 ab_glyph = "0.2"
