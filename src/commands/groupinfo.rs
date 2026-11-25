@@ -47,6 +47,16 @@ impl Command for GroupInfo {
                 }
             };
 
+            // Cache routing yang dipakai jalur send (bisa beda dari metadata fresh).
+            let routing_line = match ctx.client.groups().routing_info(&jid).await {
+                Ok(info) => format!(
+                    "{:?} ({} participants)",
+                    info.addressing_mode,
+                    info.participants.len()
+                ),
+                Err(e) => format!("gagal: {e}"),
+            };
+
             match ctx.client.groups().fetch_metadata(&jid).await {
                 Ok(meta) => {
                     let mut out = format!(
@@ -55,6 +65,7 @@ impl Command for GroupInfo {
                          • Subject: {}\n\
                          • Participants: {}\n\
                          • Addressing: {:?}\n\
+                         • Routing cache: {}\n\
                          • Announcement: {}\n\
                          • Membership approval: {}\n\
                          • Locked: {}\n\
@@ -64,6 +75,7 @@ impl Command for GroupInfo {
                         meta.subject.as_deref().unwrap_or("(tanpa nama)"),
                         meta.participants.len(),
                         meta.addressing_mode,
+                        routing_line,
                         meta.is_announcement,
                         meta.membership_approval,
                         meta.is_locked,

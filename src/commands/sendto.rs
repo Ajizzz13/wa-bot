@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
 use whatsapp_rust::bot::MessageContext;
-use whatsapp_rust::Jid;
+use whatsapp_rust::prelude::*;
+use whatsapp_rust::{Freshness, Jid};
 
 use super::{is_owner, BotContext, BoxFut, Command, CommandResult};
 
@@ -50,7 +51,16 @@ impl Command for SendTo {
                 }
             };
 
-            match ctx.client.send_text(jid, text.to_string()).await {
+            // Refresh metadata grup + device list supaya addressing mode (PN/LID)
+            // tidak memakai cache lama. Server menolak kiriman LID group dengan
+            // NACK 421 (StaleGroupAddressingMode) kalau cache masih PN.
+            let request = SendRequest::new(&jid, wa::Message::text(text.to_string())).with_options(
+                SendOptions::default()
+                    .with_group_metadata_freshness(Freshness::Refresh)
+                    .with_device_freshness(Freshness::Refresh),
+            );
+
+            match ctx.client.send(request).await {
                 Ok(result) => {
                     ctx.reply(format!("Terkirim ke {jid_str} (id: {})", result.message_id))
                         .await?;
