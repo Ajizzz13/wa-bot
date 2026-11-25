@@ -3,10 +3,12 @@ name: Build
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  build-x86:
+  build-glibc:
+    name: Build (glibc, x86_64)
     runs-on: ubuntu-latest
     container:
       image: debian:bookworm
@@ -35,8 +37,49 @@ jobs:
         run: |
           . "$HOME/.cargo/env"
           cargo +nightly build --release --bin wa-bot
+      - name: Test
+        run: |
+          . "$HOME/.cargo/env"
+          cargo +nightly test --release --bin wa-bot
       - uses: actions/upload-artifact@v4
         with:
-          name: wa-bot-linux-x86_64
+          name: wa-bot-linux-x86_64-glibc
           path: target/release/wa-bot
+          retention-days: 30
+
+  build-musl:
+    name: Build (musl, x86_64, static)
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bookworm
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_NET_RETRY: 10
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y curl build-essential pkg-config musl-tools
+      - name: Install Rust nightly
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly --profile minimal
+          . "$HOME/.cargo/env"
+          rustup target add x86_64-unknown-linux-musl
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          key: musl
+      - name: Build (static)
+        run: |
+          . "$HOME/.cargo/env"
+          cargo +nightly build --release --target x86_64-unknown-linux-musl --bin wa-bot
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wa-bot-linux-x86_64-musl
+          path: target/x86_64-unknown-linux-musl/release/wa-bot
           retention-days: 30
