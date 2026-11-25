@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let db_str = db.to_string_lossy();
-    let store = SqliteStore::new(&db_str).await?;
+    let store = SqliteStore::open(&db_str).await?;
 
     let phone_opt = get_phone_number();
     let registry = Arc::new(CommandRegistry::new(phone_opt.clone()));

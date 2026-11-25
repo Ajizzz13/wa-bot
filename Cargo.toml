@@ -2,7 +2,7 @@
 name = "wa-bot"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.94"
+rust-version = "1.95"
 publish = false
 
 [[bin]]
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
-whatsapp-rust = "0.7"
+whatsapp-rust = { git = "https://github.com/oxidezap/whatsapp-rust", rev = "14da2200a8f4455235e72a008f48e022b29debdd" }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif"] }
 imageproc = { version = "0.27", default-features = false, features = ["text"] }
 ab_glyph = "0.2"

@@ -1,5 +1,6 @@
 use whatsapp_rust::bot::MessageContext;
 use std::sync::Arc;
+use whatsapp_rust::download::DownloadLimits;
 use whatsapp_rust::prelude::*;
 use whatsapp_rust::wacore::download::MediaType;
 
@@ -126,7 +127,7 @@ impl Command for Rvo {
 
             match target {
                 TargetMedia::Image(img) => {
-                    let bytes = match ctx.client.download(img).await {
+                    let bytes = match ctx.client.download(img, DownloadLimits::default()).await {
                         Ok(b) => b,
                         Err(e) => {
                             ctx.reply_quoting(format!("❌ Gagal mengunduh foto 1x lihat: {e}")).await?;
@@ -166,7 +167,7 @@ impl Command for Rvo {
                     ctx.send_message(message).await?;
                 }
                 TargetMedia::Video(vid) => {
-                    let bytes = match ctx.client.download(vid).await {
+                    let bytes = match ctx.client.download(vid, DownloadLimits::default()).await {
                         Ok(b) => b,
                         Err(e) => {
                             ctx.reply_quoting(format!("❌ Gagal mengunduh video 1x lihat: {e}")).await?;
@@ -206,7 +207,7 @@ impl Command for Rvo {
                     ctx.send_message(message).await?;
                 }
                 TargetMedia::Audio(aud) => {
-                    let bytes = match ctx.client.download(aud).await {
+                    let bytes = match ctx.client.download(aud, DownloadLimits::default()).await {
                         Ok(b) => b,
                         Err(e) => {
                             ctx.reply_quoting(format!("❌ Gagal mengunduh voice note 1x lihat: {e}")).await?;

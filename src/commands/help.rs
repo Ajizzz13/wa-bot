@@ -82,8 +82,8 @@ impl Command for Help {
                  • */fb* `<link>`\n\
                    Unduh video publik Facebook\n\n\
                  ───[ *🎨 CREATIVE* ]───\n\
-                 • */s* `[teks | teks]`\n\
-                   Konversi foto/video ke stiker\n\
+                 • */s* `[teks | teks]` `[--mute]`\n\
+                   Foto/video ke stiker; video bersuara otomatis jadi sound sticker\n\
                  • */brat* `<teks>`\n\
                    Buat stiker teks gaya Brat\n\
                  • */rvo*\n\

@@ -5,6 +5,7 @@ use image::{ExtendedColorType, Rgba};
 use imageproc::drawing::{draw_text_mut, text_size};
 
 use whatsapp_rust::bot::MessageContext;
+use whatsapp_rust::download::DownloadLimits;
 use whatsapp_rust::prelude::*;
 use whatsapp_rust::wacore::download::MediaType;
 
@@ -40,6 +41,19 @@ fn wrap_text(s: &str, max_chars_per_line: usize) -> String {
         lines.push(current_line);
     }
     lines.join("\n")
+}
+
+/// Pisahkan flag `--mute` dari teks overlay.
+fn split_mute_flag(args: &str) -> (String, bool) {
+    let mut mute = false;
+    let mut kept = Vec::new();
+    for token in args.split_whitespace() {
+        match token.to_ascii_lowercase().as_str() {
+            "--mute" | "--no-audio" | "--tanpa-suara" => mute = true,
+            _ => kept.push(token),
+        }
+    }
+    (kept.join(" "), mute)
 }
 
 fn parse_text_params(args: &str) -> (Option<String>, Option<String>) {
@@ -291,10 +305,109 @@ fn convert_video_to_animated_webp(
     Ok(webp_bytes)
 }
 
+/// Ekstrak audio video ke OGG Opus (format yang dipakai sound sticker WhatsApp).
+/// Mengembalikan `Err` kalau video tidak punya audio atau ffmpeg gagal, supaya
+/// pemanggil bisa fallback ke stiker animasi biasa.
+fn extract_audio_ogg(
+    video_bytes: &[u8],
+    max_seconds: u32,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let in_path = format!("/tmp/wa_snd_in_{}_{}.mp4", std::process::id(), now);
+    let out_path = format!("/tmp/wa_snd_out_{}_{}.ogg", std::process::id(), now);
+
+    struct FileCleaner(String, String);
+    impl Drop for FileCleaner {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_file(&self.0);
+            let _ = std::fs::remove_file(&self.1);
+        }
+    }
+    let _cleaner = FileCleaner(in_path.clone(), out_path.clone());
+    std::fs::write(&in_path, video_bytes)?;
+
+    let seconds = max_seconds.to_string();
+    let status = std::process::Command::new("ffmpeg")
+        .args([
+            "-y",
+            "-i",
+            &in_path,
+            "-vn",
+            "-map",
+            "0:a:0?",
+            "-t",
+            &seconds,
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "32k",
+            "-ar",
+            "48000",
+            "-ac",
+            "1",
+            "-f",
+            "ogg",
+            &out_path,
+        ])
+        .output()
+        .map_err(|e| format!("gagal menjalankan ffmpeg: {e}"))?;
+
+    if !status.status.success() {
+        let err = String::from_utf8_lossy(&status.stderr);
+        let last_err = err.lines().last().unwrap_or("unknown error");
+        return Err(format!("ffmpeg audio error: {last_err}").into());
+    }
+
+    let audio_bytes = std::fs::read(&out_path)?;
+    if audio_bytes.is_empty() {
+        return Err("audio stiker kosong".into());
+    }
+    if audio_bytes.len() > 1024 * 1024 {
+        return Err("ukuran audio stiker melebihi batas".into());
+    }
+    Ok(audio_bytes)
+}
+
+struct SoundStickerAudio {
+    bytes: Vec<u8>,
+    seconds: u32,
+}
+
+fn build_sticker_message(
+    sticker: wa::message::StickerMessage,
+    audio: Option<wa::message::AudioMessage>,
+) -> wa::Message {
+    let mut message = wa::Message::default();
+
+    if let Some(audio) = audio {
+        let mut sticker = sticker;
+        sticker.audio = Some(wa::message::sticker_message::Audio::AudioMessage(Box::new(
+            audio,
+        )));
+
+        // Sound sticker dikirim sebagai Message.audioStickerMessage (field 134)
+        // yang membungkus stickerMessage berisi audioMessage (field 26).
+        let mut inner = wa::Message::default();
+        inner.sticker_message = MessageField::some(sticker);
+
+        let mut wrapper = wa::message::FutureProofMessage::default();
+        wrapper.message = MessageField::some(inner);
+        message.audio_sticker_message = MessageField::some(wrapper);
+    } else {
+        message.sticker_message = MessageField::some(sticker);
+    }
+
+    message
+}
+
 async fn send_sticker(
     ctx: &MessageContext,
     webp_bytes: Vec<u8>,
     is_animated: bool,
+    sound: Option<SoundStickerAudio>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let upload = ctx
         .client
@@ -316,8 +429,39 @@ async fn send_sticker(
         sticker.is_animated = Some(true);
     }
 
-    let mut message = wa::Message::default();
-    message.sticker_message = MessageField::some(sticker);
+    let audio_upload = match sound {
+        Some(sound) => match ctx
+            .client
+            .upload(sound.bytes, MediaType::Audio, Default::default())
+            .await
+        {
+            Ok(upload) => Some((upload, sound.seconds)),
+            Err(err) => {
+                // Audio gagal diunggah: tetap kirim stiker animasi tanpa suara.
+                eprintln!("gagal upload audio stiker: {err}");
+                None
+            }
+        },
+        None => None,
+    };
+
+    let audio_message = audio_upload.map(|(audio_upload, seconds)| {
+        let mut audio = wa::message::AudioMessage::default();
+        audio.url = Some(audio_upload.url);
+        audio.direct_path = Some(audio_upload.direct_path);
+        audio.media_key = Some(audio_upload.media_key.to_vec());
+        audio.file_sha256 = Some(audio_upload.file_sha256.to_vec());
+        audio.file_enc_sha256 = Some(audio_upload.file_enc_sha256.to_vec());
+        audio.file_length = Some(audio_upload.file_length);
+        audio.media_key_timestamp = Some(audio_upload.media_key_timestamp);
+        audio.streaming_sidecar = audio_upload.streaming_sidecar;
+        audio.mimetype = Some("audio/ogg; codecs=opus".to_string());
+        audio.seconds = Some(seconds.max(1));
+        audio.ptt = Some(true);
+        audio
+    });
+
+    let message = build_sticker_message(sticker, audio_message);
 
     ctx.send_message(message).await?;
     Ok(())
@@ -333,7 +477,7 @@ impl Command for Sticker {
     }
 
     fn description(&self) -> &'static str {
-        "Buat stiker foto/video (opsional teks: /s atas | bawah atau /s | bawah)"
+        "Buat stiker foto/video; video bersuara jadi sound sticker (teks: /s atas | bawah, --mute untuk tanpa audio)"
     }
 
     fn execute<'a>(
@@ -346,12 +490,13 @@ impl Command for Sticker {
             let media = match extract_media_target(&ctx.message) {
                 Some(m) => m,
                 None => {
-                    ctx.reply_quoting("❌ Kirim foto/video dengan caption `/s` atau balas/reply foto/video dengan `/s`.").await?;
+                    ctx.reply_quoting("❌ Kirim foto/video dengan caption `/s` atau balas/reply foto/video dengan `/s`.\nVideo bersuara otomatis jadi sound sticker. Pakai `--mute` untuk stiker tanpa audio.").await?;
                     return Ok(());
                 }
             };
 
-            let (top_opt, bot_opt) = parse_text_params(args);
+            let (text_args, mute) = split_mute_flag(args);
+            let (top_opt, bot_opt) = parse_text_params(&text_args);
 
             let _ = ctx.react("⏳").await;
             let _media_permit = bot
@@ -364,27 +509,94 @@ impl Command for Sticker {
 
             match media {
                 MediaTarget::Image(img) => {
-                    let image_bytes = ctx.client.download(img).await?;
+                    let image_bytes = ctx
+                        .client
+                        .download(img, DownloadLimits::default())
+                        .await?;
                     let webp_bytes = convert_to_webp(
                         &image_bytes,
                         top_opt.as_deref(),
                         bot_opt.as_deref(),
                     )?;
-                    send_sticker(ctx, webp_bytes, false).await?;
+                    send_sticker(ctx, webp_bytes, false, None).await?;
                 }
                 MediaTarget::Video(vid) => {
                     if vid.seconds.unwrap_or(0) > 10 {
                         ctx.reply_quoting("❌ Durasi video maksimal 10 detik untuk stiker.").await?;
                         return Ok(());
                     }
-                    let video_bytes = ctx.client.download(vid).await?;
+                    let video_bytes = ctx
+                        .client
+                        .download(vid, DownloadLimits::default())
+                        .await?;
                     let webp_bytes = convert_video_to_animated_webp(&video_bytes)?;
-                    send_sticker(ctx, webp_bytes, true).await?;
+
+                    let sound = if mute {
+                        None
+                    } else {
+                        match extract_audio_ogg(&video_bytes, 4) {
+                            Ok(bytes) => Some(SoundStickerAudio {
+                                bytes,
+                                seconds: vid.seconds.unwrap_or(4).clamp(1, 4),
+                            }),
+                            Err(_) => None,
+                        }
+                    };
+
+                    send_sticker(ctx, webp_bytes, true, sound).await?;
                 }
             }
 
             let _ = ctx.react("✅").await;
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_mute_flag_from_overlay_text() {
+        assert_eq!(split_mute_flag(""), (String::new(), false));
+        assert_eq!(
+            split_mute_flag("atas | bawah --mute"),
+            ("atas | bawah".to_string(), true)
+        );
+        assert_eq!(
+            split_mute_flag("--tanpa-suara halo"),
+            ("halo".to_string(), true)
+        );
+        assert_eq!(split_mute_flag("halo"), ("halo".to_string(), false));
+    }
+
+    #[test]
+    fn sound_sticker_uses_field_134_wrapper() {
+        let message = build_sticker_message(
+            wa::message::StickerMessage::default(),
+            Some(wa::message::AudioMessage::default()),
+        );
+        assert!(!message.sticker_message.is_set());
+        let wrapper = message
+            .audio_sticker_message
+            .as_option()
+            .expect("wrapper audioStickerMessage");
+        let inner = wrapper.message.as_option().expect("pesan di dalam wrapper");
+        let sticker = inner
+            .sticker_message
+            .as_option()
+            .expect("sticker di dalam wrapper");
+        assert!(matches!(
+            sticker.audio,
+            Some(wa::message::sticker_message::Audio::AudioMessage(_))
+        ));
+    }
+
+    #[test]
+    fn sticker_without_audio_stays_plain() {
+        let message = build_sticker_message(wa::message::StickerMessage::default(), None);
+        assert!(message.sticker_message.is_set());
+        assert!(!message.audio_sticker_message.is_set());
     }
 }
