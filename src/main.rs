@@ -94,6 +94,119 @@ fn configure_memory_allocator() {
         libc::mallopt(libc::M_MMAP_THRESHOLD, 128 * 1024);
     }
 }
+/// Diagnostik: dump stanza `<message>` keluar untuk grup yang bermasalah.
+/// Membantu melihat `addressing_mode`, `phash`, dan isi `<participants>`
+/// (apakah ada JID PN yang bocor ke grup LID, dsb).
+fn dump_sent_group_frame(plaintext: &[u8]) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    const KIPAS: &str = "120363431048197201";
+    const TABUNG: &str = "120363309940031565";
+    static DUMP_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    let Ok(node) = whatsapp_rust::wacore_binary::marshal::unmarshal_packed_ref(plaintext) else {
+        return;
+    };
+    if node.tag != "message" {
+        return;
+    }
+    let Some(to) = node.get_attr("to") else {
+        return;
+    };
+    let to_str = to.as_str();
+    let target = if to_str.starts_with(KIPAS) {
+        KIPAS
+    } else if to_str.starts_with(TABUNG) {
+        TABUNG
+    } else {
+        return;
+    };
+    // Batasi supaya log tidak banjir.
+    if DUMP_COUNT.fetch_add(1, Ordering::Relaxed) >= 8 {
+        return;
+    }
+
+    let mut attrs = String::new();
+    for (k, v) in node.attrs_iter() {
+        attrs.push_str(&format!(" {}={}", k, v.as_str()));
+    }
+    eprintln!("[SENT-FRAME] to={to_str} attrs:{attrs}");
+
+    let mut saw_participants = false;
+    if let Some(children) = node.children() {
+        for child in children {
+            match &*child.tag {
+                "participants" => {
+                    saw_participants = true;
+                    let tos = child.children().unwrap_or(&[]);
+                    let mut lid = 0usize;
+                    let mut pn = 0usize;
+                    let mut other = 0usize;
+                    let mut pn_list: Vec<String> = Vec::new();
+                    let mut other_list: Vec<String> = Vec::new();
+                    for t in tos {
+                        let jid = t
+                            .get_attr("jid")
+                            .map(|v| v.as_str().into_owned())
+                            .unwrap_or_default();
+                        if jid.ends_with("@lid") {
+                            lid += 1;
+                        } else if jid.ends_with("@s.whatsapp.net") {
+                            pn += 1;
+                            if pn_list.len() < 30 {
+                                pn_list.push(jid);
+                            }
+                        } else {
+                            other += 1;
+                            if other_list.len() < 30 {
+                                other_list.push(jid);
+                            }
+                        }
+                    }
+                    eprintln!(
+                        "[SENT-FRAME] group={target} participants total={} lid={} pn={} other={}",
+                        tos.len(),
+                        lid,
+                        pn,
+                        other
+                    );
+                    for jid in &pn_list {
+                        eprintln!("[SENT-FRAME] PN-IN-LID: {jid}");
+                    }
+                    for jid in &other_list {
+                        eprintln!("[SENT-FRAME] OTHER-SERVER: {jid}");
+                    }
+                    if target == KIPAS {
+                        for t in tos {
+                            let jid = t
+                                .get_attr("jid")
+                                .map(|v| v.as_str().into_owned())
+                                .unwrap_or_default();
+                            eprintln!("[SENT-FRAME] to {jid}");
+                        }
+                    }
+                }
+                "enc" => {
+                    let etype = child
+                        .get_attr("type")
+                        .map(|v| v.as_str().into_owned())
+                        .unwrap_or_default();
+                    eprintln!(
+                        "[SENT-FRAME] enc type={etype} bytes={}",
+                        child.content_bytes().map(|b| b.len()).unwrap_or(0)
+                    );
+                }
+                tag => {
+                    eprintln!("[SENT-FRAME] child <{tag}>");
+                }
+            }
+        }
+    }
+    if !saw_participants {
+        eprintln!("[SENT-FRAME] group={target} NO-PARTICIPANTS-NODE");
+    }
+}
+
 async fn log_inbound_message(ctx: &whatsapp_rust::bot::MessageContext, text: &str) {
     let push_name = if ctx.info.push_name.trim().is_empty() {
         "Anonim".to_string()
@@ -174,6 +287,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
             // Diagnostik: aktifkan event kegagalan dekripsi (butuh lease selama proses hidup).
             std::mem::forget(client.acquire_enc_decrypt_failed_forwarding());
+            // Diagnostik: tangkap stanza keluar untuk membedah framing grup.
+            std::mem::forget(client.acquire_sent_frame_forwarding());
 
             // Diagnostik: daftar semua grup yang diikuti akun bot.
             let c = Arc::clone(&client);
@@ -200,6 +315,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 EventKind::EncDecryptFailed,
                 EventKind::UndecryptableMessage,
                 EventKind::GroupUpdate,
+                EventKind::SentFrame,
             ],
             |event, _client| async move {
                 match &*event {
@@ -228,6 +344,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             "[GROUP-UPDATE] group={} actor={:?} lid_mode={} action={:?}",
                             e.group_jid, e.participant, e.is_lid_addressing_mode, e.action
                         );
+                    }
+                    Event::SentFrame(e) => {
+                        dump_sent_group_frame(&e.plaintext);
                     }
                     _ => {}
                 }
