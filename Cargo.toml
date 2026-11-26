@@ -19,3 +19,4 @@ serde_json = "1"
 regex = "1"
 ureq = { version = "3", features = ["cookies", "json"] }
 libc = "0.2"
+freefire-online = { git = "https://github.com/Ajizzz13/freefire-online-rust", rev = "b9dd2b2c6de5ef42841b23d0c49047b93e860aab" }

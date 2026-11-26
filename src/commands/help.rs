@@ -59,16 +59,36 @@ impl Command for Help {
             }
 
             let uptime = format_uptime(bot.start_time.elapsed().as_secs());
-            let total_cmd = bot.commands.len();
             let is_user_owner = super::is_owner(ctx, bot).await;
             let role_label = if is_user_owner { "Owner" } else { "User" };
+            // Menu owner (termasuk /online) hanya ditampilkan untuk owner.
+            let visible_total = if is_user_owner {
+                bot.commands.len()
+            } else {
+                bot.commands.len().saturating_sub(3)
+            };
+            let owner_block = if is_user_owner {
+                "───[ 👑 *OWNER* ]───\n\
+                 • */online* `<id>`\n\
+                   Cek status online FF manual\n\
+                 • */online watch* `<id> <interval>`\n\
+                   Jadwal rutin, notif ke DM owner\n\
+                 • */online watch list* / *stop*\n\
+                   Kelola jadwal online\n\
+                 • */private* `[on/off]`\n\
+                   Kunci akses grup / privat\n\
+                 • */owner* `[add/del/list]`\n\
+                   Kelola nomor akses owner\n\n"
+            } else {
+                ""
+            };
             let menu = format!(
                 "╭─[ *Z-BOT ASSISTANT* ]─╮\n\
                  │ 👤 *User:* @{display_phone}\n\
                  │ 👑 *Role:* {role_label}\n\
                  │ ⏱️ *Uptime:* {uptime}\n\
                  │ ⚡ *Engine:* Rust 1.94\n\
-                 │ 📦 *Total:* {total_cmd} Fitur\n\
+                 │ 📦 *Total:* {visible_total} Fitur\n\
                  ╰───────────────────────╯\n\n\
                  ───[ *📥 DOWNLOADER* ]───\n\
                  • */yt* `<link>`\n\
@@ -95,11 +115,7 @@ impl Command for Help {
                    Lihat waktu aktif server\n\
                  • */menu* / */help*\n\
                    Tampilkan panduan ini\n\n\
-                 ───[ 👑 *OWNER* ]───\n\
-                 • */private* `[on/off]`\n\
-                   Kunci akses grup / privat\n\
-                 • */owner* `[add/del/list]`\n\
-                   Kelola nomor akses owner\n\n\
+                 {owner_block}\n\
                  ───[ 💡 *TIPS* ]───\n\
                  • Reply media dengan command\n\
                  • Meme: */s teks atas | bawah*"

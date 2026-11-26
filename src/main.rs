@@ -1,7 +1,7 @@
 mod commands;
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use commands::CommandRegistry;
@@ -154,6 +154,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let registry = Arc::new(CommandRegistry::new(phone_opt.clone()));
     let reg = registry.clone();
 
+    // Scheduler pengecekan rutin: akses jadwal, owner, dan client aktif.
+    let scheds_for_sched = Arc::clone(&registry.bot_ctx.schedules);
+    let owners_for_sched = Arc::clone(&registry.bot_ctx.extra_owners);
+    let client_slot: Arc<Mutex<Option<Arc<whatsapp_rust::prelude::Client>>>> =
+        Arc::new(Mutex::new(None));
+
     let mut builder = Bot::builder()
         .with_backend(store)
         .skip_history_sync()
@@ -168,8 +174,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .on_pair_code_error(|err, _| async move {
             eprintln!("Pair code error: {:?}", err);
         })
-        .on_connected(|_client| async move {
-            eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
+        .on_connected({
+            let client_slot = Arc::clone(&client_slot);
+            let scheds_for_sched = Arc::clone(&scheds_for_sched);
+            let owners_for_sched = Arc::clone(&owners_for_sched);
+            move |client| {
+                let client_slot = Arc::clone(&client_slot);
+                let scheds_for_sched = Arc::clone(&scheds_for_sched);
+                let owners_for_sched = Arc::clone(&owners_for_sched);
+                async move {
+                    eprintln!("\n[+] Berhasil terhubung ke WhatsApp!");
+                    if let Ok(mut slot) = client_slot.lock() {
+                        *slot = Some(Arc::clone(&client));
+                    }
+                    static STARTED: std::sync::atomic::AtomicBool =
+                        std::sync::atomic::AtomicBool::new(false);
+                    if !STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                        tokio::spawn(commands::online::run_scheduler(
+                            client_slot,
+                            scheds_for_sched,
+                            owners_for_sched,
+                        ));
+                    }
+                }
+            }
         })
         .on_logged_out(|info| async move {
             eprintln!("[-] Sesi logout / dihentikan: reason={:?}, on_connect={}", info.reason, info.on_connect);

@@ -20,6 +20,7 @@ pub mod youtube;
 pub mod private_mode;
 pub mod ytmp3;
 pub mod owner;
+pub mod online;
 pub mod rvo;
 
 pub type CommandResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -88,6 +89,7 @@ pub struct BotContext {
     pub private_mode: Arc<AtomicBool>,
     pub bot_number: Option<String>,
     pub extra_owners: Arc<std::sync::RwLock<Vec<String>>>,
+    pub schedules: Arc<std::sync::RwLock<Vec<online::OnlineSchedule>>>,
     pub last_view_once: Arc<std::sync::RwLock<std::collections::HashMap<String, Arc<whatsapp_rust::prelude::wa::Message>>>>,
 }
 
@@ -279,6 +281,7 @@ impl CommandRegistry {
             Box::new(ytmp3::YtMp3),
             Box::new(private_mode::PrivateMode),
             Box::new(owner::Owner),
+            Box::new(online::Online),
             Box::new(rvo::Rvo),
         ];
 
@@ -300,6 +303,7 @@ impl CommandRegistry {
                 private_mode: Arc::new(AtomicBool::new(priv_mode)),
                 bot_number,
                 extra_owners: Arc::new(std::sync::RwLock::new(owners)),
+                schedules: Arc::new(std::sync::RwLock::new(online::load_schedules())),
                 last_view_once: Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             },
         }
