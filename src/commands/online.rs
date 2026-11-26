@@ -290,24 +290,28 @@ impl Command for Online {
             if first.eq_ignore_ascii_case("watch") {
                 let rest: Vec<&str> = parts.collect();
                 if rest.is_empty() || rest[0].eq_ignore_ascii_case("list") {
-                    let s = bot.schedules.read().unwrap_or_else(|e| e.into_inner());
-                    if s.is_empty() {
-                        ctx.reply_quoting("Belum ada jadwal online check.").await?;
-                    } else {
-                        let now = now_secs();
-                        let mut out = String::from("📋 *Jadwal Online Check*\n");
-                        for (i, item) in s.iter().enumerate() {
-                            let wait = item.next_run.saturating_sub(now);
-                            out.push_str(&format!(
-                                "{}) `{}` — {} — next {} detik\n",
-                                i + 1,
-                                item.id,
-                                fmt_interval(item.interval_secs),
-                                wait
-                            ));
+                    let list_text = {
+                        let s = bot.schedules.read().unwrap_or_else(|e| e.into_inner());
+                        if s.is_empty() {
+                            None
+                        } else {
+                            let now = now_secs();
+                            let mut out = String::from("📋 *Jadwal Online Check*\n");
+                            for (i, item) in s.iter().enumerate() {
+                                let wait = item.next_run.saturating_sub(now);
+                                out.push_str(&format!(
+                                    "{}) `{}` — {} — next {} detik\n",
+                                    i + 1,
+                                    item.id,
+                                    fmt_interval(item.interval_secs),
+                                    wait
+                                ));
+                            }
+                            Some(out)
                         }
-                        ctx.reply_quoting(out).await?;
-                    }
+                    };
+                    let reply = list_text.unwrap_or_else(|| "Belum ada jadwal online check.".to_string());
+                    ctx.reply_quoting(reply).await?;
                     return Ok(());
                 }
 
