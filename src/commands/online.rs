@@ -376,8 +376,12 @@ impl Command for Online {
             }
 
             match freefire_online::check_online(first).await {
-                Ok(res) => ctx.reply_quoting(format_result(&res, false, None)).await?,
-                Err(e) => ctx.reply_quoting(format!("⚠️ Gagal cek `{first}`: {e}")).await?,
+                Ok(res) => {
+                    ctx.reply_quoting(format_result(&res, false, None)).await?;
+                }
+                Err(e) => {
+                    ctx.reply_quoting(format!("⚠️ Gagal cek `{first}`: {e}")).await?;
+                }
             }
             Ok(())
         })
